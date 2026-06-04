@@ -221,6 +221,43 @@ def _find_company_bundle(
     return company, primary_security
 
 
+@router.get("")
+def list_companies(
+        limit: int = Query(default=20, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        db: Session = Depends(db_dependency),
+) -> dict:
+    stmt = (
+        select(CompanyModel, SecurityModel)
+            .join(
+            SecurityModel,
+            (SecurityModel.company_id == CompanyModel.id)
+            & (SecurityModel.is_primary.is_(True)),
+            isouter=True,
+        )
+            .order_by(CompanyModel.canonical_name.asc())
+    )
+
+    total = db.execute(
+        select(func.count()).select_from(CompanyModel)
+    ).scalar_one()
+
+    rows = db.execute(stmt.limit(limit).offset(offset)).all()
+
+    data = [
+        {
+            "company": _company_to_dict(company),
+            "primary_security": _security_to_dict(security),
+        }
+        for company, security in rows
+    ]
+
+    return success_response(
+        data=data,
+        meta=pagination_meta(limit=limit, offset=offset, total=total),
+    )
+
+
 @router.get("/search")
 def search_companies(
         keyword: str = Query(..., min_length=1),
