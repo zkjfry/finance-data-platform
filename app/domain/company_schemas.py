@@ -51,3 +51,18 @@ class MarketPrice(BaseModel):
     source: str
     inserted_at: datetime
     updated_at: datetime
+
+
+class DocumentCompanyLink(BaseModel):
+    id: int | None = None
+    document_type: str
+    document_id: int
+    company_id: int
+    security_id: Optional[int] = None
+    ticker: Optional[str] = None
+    match_method: str
+    evidence_text: Optional[str] = None
+    review_status: str = "pending"
+    confidence: Decimal
+    inserted_at: datetime
+    updated_at: datetime

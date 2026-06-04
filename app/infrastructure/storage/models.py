@@ -177,3 +177,42 @@ class MarketPriceModel(Base):
     source = Column(String(128), nullable=False)
     inserted_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
+
+class DocumentCompanyLinkModel(Base):
+    __tablename__ = "document_company_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_type",
+            "document_id",
+            "company_id",
+            name="uq_document_company_link_document_company",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # "news" or "report"
+    document_type = Column(String(32), nullable=False)
+
+    # news_articles.id or research_reports.id
+    document_id = Column(Integer, nullable=False)
+
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    security_id = Column(Integer, ForeignKey("securities.id"), nullable=True)
+
+    ticker = Column(String(64), nullable=True)
+
+    # ticker / company_name / alias / body_alias / manual / etc.
+    match_method = Column(String(64), nullable=False)
+
+    # Short text explaining why this link was created.
+    evidence_text = Column(Text, nullable=True)
+
+    # accepted / pending / rejected
+    review_status = Column(String(32), nullable=False, default="pending")
+
+    # 0.0000 - 1.0000
+    confidence = Column(Numeric(5, 4), nullable=False)
+
+    inserted_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)

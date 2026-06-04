@@ -3,10 +3,11 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.company_schemas import MarketPrice
+from app.domain.company_schemas import DocumentCompanyLink, MarketPrice
 from app.domain.news_schemas import NewsArticle
 from app.domain.report_schemas import ResearchReport
 from app.infrastructure.storage.models import (
+    DocumentCompanyLinkModel,
     MarketPriceModel,
     NewsArticleModel,
     RawDocumentModel,
@@ -179,6 +180,53 @@ def upsert_market_price(db: Session, price: MarketPrice) -> MarketPriceModel:
     existing.volume = price.volume
     existing.source = price.source
     existing.updated_at = price.updated_at
+
+    db.commit()
+    db.refresh(existing)
+    return existing
+
+def upsert_document_company_link(
+    db: Session,
+    link: DocumentCompanyLink,
+) -> DocumentCompanyLinkModel:
+    stmt = select(DocumentCompanyLinkModel).where(
+        DocumentCompanyLinkModel.document_type == link.document_type,
+        DocumentCompanyLinkModel.document_id == link.document_id,
+        DocumentCompanyLinkModel.company_id == link.company_id,
+    )
+
+    existing = db.execute(stmt).scalar_one_or_none()
+
+    if existing is None:
+        model = DocumentCompanyLinkModel(
+            document_type=link.document_type,
+            document_id=link.document_id,
+            company_id=link.company_id,
+            security_id=link.security_id,
+            ticker=link.ticker,
+            match_method=link.match_method,
+            evidence_text=link.evidence_text,
+            review_status=link.review_status,
+            confidence=link.confidence,
+            inserted_at=link.inserted_at,
+            updated_at=link.updated_at,
+        )
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        return model
+
+    # If the same document-company pair is matched again,
+    # keep the stronger match.
+    if link.confidence >= existing.confidence:
+        existing.security_id = link.security_id
+        existing.ticker = link.ticker
+        existing.match_method = link.match_method
+        existing.evidence_text = link.evidence_text
+        existing.review_status = link.review_status
+        existing.confidence = link.confidence
+
+    existing.updated_at = link.updated_at
 
     db.commit()
     db.refresh(existing)

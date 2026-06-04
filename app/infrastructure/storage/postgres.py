@@ -19,7 +19,6 @@ SessionLocal = sessionmaker(
     future=True,
 )
 
-
 SEARCH_INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_news_articles_published_at ON news_articles (published_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_news_articles_source ON news_articles (source)",
@@ -65,6 +64,12 @@ SEARCH_INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_securities_company_id ON securities (company_id)",
     "CREATE INDEX IF NOT EXISTS idx_market_prices_security_date ON market_prices (security_id, price_date DESC)",
     "CREATE INDEX IF NOT EXISTS idx_market_prices_source ON market_prices (source)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_document ON document_company_links (document_type, document_id)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_company ON document_company_links (company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_security ON document_company_links (security_id)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_ticker ON document_company_links (ticker)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_review_status ON document_company_links (review_status)",
+    "CREATE INDEX IF NOT EXISTS idx_document_company_links_company_status ON document_company_links (company_id, review_status)",
 ]
 
 

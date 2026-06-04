@@ -218,3 +218,38 @@ ON market_prices (security_id, price_date DESC);
 
 CREATE INDEX IF NOT EXISTS idx_market_prices_source
 ON market_prices (source);
+
+CREATE TABLE IF NOT EXISTS document_company_links (
+    id SERIAL PRIMARY KEY,
+    document_type VARCHAR(32) NOT NULL,
+    document_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    security_id INTEGER REFERENCES securities(id),
+    ticker VARCHAR(64),
+    match_method VARCHAR(64) NOT NULL,
+    evidence_text TEXT,
+    review_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    confidence NUMERIC(5, 4) NOT NULL,
+    inserted_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_document_company_link_document_company
+        UNIQUE (document_type, document_id, company_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_document
+ON document_company_links (document_type, document_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_company
+ON document_company_links (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_security
+ON document_company_links (security_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_ticker
+ON document_company_links (ticker);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_review_status
+ON document_company_links (review_status);
+
+CREATE INDEX IF NOT EXISTS idx_document_company_links_company_status
+ON document_company_links (company_id, review_status);
