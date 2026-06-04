@@ -78,3 +78,21 @@ class CrawlStateModel(Base):
     last_content_hash = Column(String(128), nullable=True)
     status = Column(String(64), nullable=True)
     error_message = Column(Text, nullable=True)
+
+
+class CrawlRunModel(Base):
+    __tablename__ = "crawl_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crawler_name = Column(String(128), nullable=False)
+    source = Column(String(128), nullable=False)
+    status = Column(String(64), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    items_fetched = Column(Integer, nullable=False, default=0)
+    items_inserted = Column(Integer, nullable=False, default=0)
+    items_skipped = Column(Integer, nullable=False, default=0)
+    items_failed = Column(Integer, nullable=False, default=0)
+
+    error_message = Column(Text, nullable=True)

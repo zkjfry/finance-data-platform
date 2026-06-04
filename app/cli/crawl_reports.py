@@ -1,69 +1,76 @@
-from pathlib import Path
+import json
 
-from app.collectors.reports.investor_relations_collector import InvestorRelationsReportCollector
+from app.collectors.reports.sec_edgar_collector import SecEdgarCollector
 from app.common.hashing import sha256_text
 from app.common.time_utils import utc_now
-from app.infrastructure.files.downloader import download_file
-from app.infrastructure.pdf.pdf_reader import extract_pdf_text
 from app.infrastructure.storage.postgres import get_db_session, init_db
+from app.pipeline.crawl_run_logger import finish_crawl_run, start_crawl_run
 from app.pipeline.dedup import is_duplicate_report
 from app.pipeline.normalize_reports import normalize_research_report
-from app.pipeline.raw_archive import archive_raw_html
 from app.pipeline.state_tracker import update_crawl_state
 from app.pipeline.upsert import insert_raw_document, upsert_research_report
 
 
-def run_reports_crawl_once() -> None:
+def run_reports_crawl_once() -> dict:
     init_db()
 
-    collector = InvestorRelationsReportCollector(
-        list_url="https://investor.apple.com/sec-filings/default.aspx"
+    collector = SecEdgarCollector(
+        cik="0000320193",
+        ticker="AAPL",
+        company_name="Apple Inc.",
+        form_types=["10-K", "10-Q", "8-K"],
     )
 
     db = get_db_session()
 
+    run = start_crawl_run(
+        db=db,
+        crawler_name="crawl_reports",
+        source=collector.source_name,
+    )
+
+    items_fetched = 0
+    items_inserted = 0
+    items_skipped = 0
+    items_failed = 0
+    fatal_error = None
+
     try:
-        for raw in collector.collect(limit=10):
+        try:
+            raw_items = list(collector.collect(limit=10))
+            items_fetched = len(raw_items)
+        except Exception as exc:
+            fatal_error = str(exc)
+            finish_crawl_run(
+                db=db,
+                run=run,
+                status="failed",
+                items_fetched=0,
+                items_inserted=0,
+                items_skipped=0,
+                items_failed=1,
+                error_message=fatal_error,
+            )
+            raise
+
+        for raw in raw_items:
             try:
-                if raw.get("detail_html"):
-                    raw_hash = sha256_text(raw["detail_html"])
+                raw_text = json.dumps(raw, ensure_ascii=False, default=str)
+                raw_hash = sha256_text(raw_text)
 
-                    raw_path = archive_raw_html(
-                        source=collector.source_name,
-                        url=raw["detail_url"],
-                        html=raw["detail_html"],
-                    )
+                insert_raw_document(
+                    db=db,
+                    source=collector.source_name,
+                    source_type="sec_filing_json",
+                    url=raw["detail_url"],
+                    content_type="application/json",
+                    content_hash=raw_hash,
+                    fetched_at=utc_now(),
+                    local_path=None,
+                    raw_text=raw_text,
+                )
 
-                    insert_raw_document(
-                        db=db,
-                        source=collector.source_name,
-                        source_type="report_detail_html",
-                        url=raw["detail_url"],
-                        content_type="text/html",
-                        content_hash=raw_hash,
-                        fetched_at=utc_now(),
-                        local_path=raw_path,
-                    )
-
-                extracted = collector.extract(raw)
-
-                pdf_url = extracted.get("pdf_url")
-                if pdf_url:
-                    filename = extracted["report_id"] + ".pdf"
-                    local_pdf = str(Path("data/raw/reports") / filename)
-
-                    download_file(pdf_url, local_pdf)
-                    extracted["pdf_local_path"] = local_pdf
-
-                    try:
-                        pdf_text = extract_pdf_text(local_pdf)
-                        if pdf_text:
-                            extracted["body_text"] = pdf_text
-                            extracted["summary"] = pdf_text[:500]
-                    except Exception as exc:
-                        print(f"[REPORT PDF WARN] {exc}")
-
-                normalized = normalize_research_report(extracted)
+                normalized = normalize_research_report(raw)
 
                 duplicated = is_duplicate_report(
                     db=db,
@@ -72,8 +79,11 @@ def run_reports_crawl_once() -> None:
                     content_hash=normalized.content_hash,
                 )
 
-                if not duplicated:
+                if duplicated:
+                    items_skipped += 1
+                else:
                     upsert_research_report(db, normalized)
+                    items_inserted += 1
 
                 update_crawl_state(
                     db=db,
@@ -83,9 +93,16 @@ def run_reports_crawl_once() -> None:
                     status="success",
                 )
 
-                print(f"[REPORT] url={raw['detail_url']} duplicate={duplicated}")
+                print(
+                    f"[SEC REPORT] "
+                    f"type={raw['report_type']} "
+                    f"date={raw['published_at']} "
+                    f"url={raw['detail_url']} "
+                    f"duplicate={duplicated}"
+                )
 
             except Exception as exc:
+                items_failed += 1
                 update_crawl_state(
                     db=db,
                     source=collector.source_name,
@@ -94,11 +111,46 @@ def run_reports_crawl_once() -> None:
                     status="failed",
                     error_message=str(exc),
                 )
-                print(f"[REPORT ERROR] {exc}")
+                print(f"[SEC REPORT ERROR] {exc}")
+
+        final_status = "success" if items_failed == 0 else "partial_success"
+
+        finish_crawl_run(
+            db=db,
+            run=run,
+            status=final_status,
+            items_fetched=items_fetched,
+            items_inserted=items_inserted,
+            items_skipped=items_skipped,
+            items_failed=items_failed,
+        )
+
+        return {
+            "status": final_status,
+            "items_fetched": items_fetched,
+            "items_inserted": items_inserted,
+            "items_skipped": items_skipped,
+            "items_failed": items_failed,
+        }
+
+    except Exception as exc:
+        if fatal_error is None:
+            finish_crawl_run(
+                db=db,
+                run=run,
+                status="failed",
+                items_fetched=items_fetched,
+                items_inserted=items_inserted,
+                items_skipped=items_skipped,
+                items_failed=items_failed + 1,
+                error_message=str(exc),
+            )
+        raise
 
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    run_reports_crawl_once()
+    result = run_reports_crawl_once()
+    print(result)

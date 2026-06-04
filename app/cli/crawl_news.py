@@ -2,6 +2,7 @@ from app.collectors.news.yahoo_finance import YahooFinanceNewsCollector
 from app.common.hashing import sha256_text
 from app.common.time_utils import utc_now
 from app.infrastructure.storage.postgres import get_db_session, init_db
+from app.pipeline.crawl_run_logger import finish_crawl_run, start_crawl_run
 from app.pipeline.dedup import is_duplicate_article
 from app.pipeline.normalize_news import normalize_news_article
 from app.pipeline.raw_archive import archive_raw_html
@@ -9,13 +10,42 @@ from app.pipeline.state_tracker import update_crawl_state
 from app.pipeline.upsert import insert_raw_document, upsert_news_article
 
 
-def run_news_crawl_once() -> None:
+def run_news_crawl_once() -> dict:
     init_db()
     collector = YahooFinanceNewsCollector()
     db = get_db_session()
 
+    run = start_crawl_run(
+        db=db,
+        crawler_name="crawl_news",
+        source=collector.source_name,
+    )
+
+    items_fetched = 0
+    items_inserted = 0
+    items_skipped = 0
+    items_failed = 0
+    fatal_error = None
+
     try:
-        for raw in collector.collect(limit=10):
+        try:
+            raw_items = list(collector.collect(limit=10))
+            items_fetched = len(raw_items)
+        except Exception as exc:
+            fatal_error = str(exc)
+            finish_crawl_run(
+                db=db,
+                run=run,
+                status="failed",
+                items_fetched=0,
+                items_inserted=0,
+                items_skipped=0,
+                items_failed=1,
+                error_message=fatal_error,
+            )
+            raise
+
+        for raw in raw_items:
             try:
                 raw_hash = sha256_text(raw["html"])
 
@@ -47,8 +77,11 @@ def run_news_crawl_once() -> None:
                     content_hash=normalized.content_hash,
                 )
 
-                if not duplicated:
+                if duplicated:
+                    items_skipped += 1
+                else:
                     upsert_news_article(db, normalized)
+                    items_inserted += 1
 
                 update_crawl_state(
                     db=db,
@@ -61,6 +94,7 @@ def run_news_crawl_once() -> None:
                 print(f"[NEWS] url={raw['url']} duplicate={duplicated}")
 
             except Exception as exc:
+                items_failed += 1
                 update_crawl_state(
                     db=db,
                     source=collector.source_name,
@@ -71,9 +105,44 @@ def run_news_crawl_once() -> None:
                 )
                 print(f"[NEWS ERROR] {exc}")
 
+        final_status = "success" if items_failed == 0 else "partial_success"
+
+        finish_crawl_run(
+            db=db,
+            run=run,
+            status=final_status,
+            items_fetched=items_fetched,
+            items_inserted=items_inserted,
+            items_skipped=items_skipped,
+            items_failed=items_failed,
+        )
+
+        return {
+            "status": final_status,
+            "items_fetched": items_fetched,
+            "items_inserted": items_inserted,
+            "items_skipped": items_skipped,
+            "items_failed": items_failed,
+        }
+
+    except Exception as exc:
+        if fatal_error is None:
+            finish_crawl_run(
+                db=db,
+                run=run,
+                status="failed",
+                items_fetched=items_fetched,
+                items_inserted=items_inserted,
+                items_skipped=items_skipped,
+                items_failed=items_failed + 1,
+                error_message=str(exc),
+            )
+        raise
+
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    run_news_crawl_once()
+    result = run_news_crawl_once()
+    print(result)
