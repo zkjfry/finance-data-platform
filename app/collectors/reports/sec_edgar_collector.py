@@ -1,24 +1,29 @@
 from datetime import datetime, timezone
 from typing import Iterator
 
+from bs4 import BeautifulSoup
+
 from app.common.hashing import sha256_text
-from app.infrastructure.http.client import get_json
+from app.common.utils import clean_text
+from app.infrastructure.http.client import get_html, get_json
 
 
 class SecEdgarCollector:
     source_name = "sec_edgar"
 
     def __init__(
-        self,
-        cik: str,
-        ticker: str,
-        company_name: str,
-        form_types: list[str] | None = None,
+            self,
+            cik: str,
+            ticker: str,
+            company_name: str,
+            form_types: list[str] | None = None,
+            fetch_filing_text: bool = True,
     ) -> None:
         self.cik = cik.zfill(10)
         self.ticker = ticker
         self.company_name = company_name
         self.form_types = form_types or ["10-K", "10-Q", "8-K"]
+        self.fetch_filing_text = fetch_filing_text
 
     @property
     def submissions_url(self) -> str:
@@ -26,7 +31,6 @@ class SecEdgarCollector:
 
     def collect(self, limit: int = 10) -> Iterator[dict]:
         data = get_json(self.submissions_url)
-
         filings = data.get("filings", {}).get("recent", {})
 
         accession_numbers = filings.get("accessionNumber", [])
@@ -65,7 +69,16 @@ class SecEdgarCollector:
                 f"{int(self.cik)}/{accession_no_dash}/"
             )
 
+            filing_text = ""
+            if self.fetch_filing_text:
+                try:
+                    filing_text = self._fetch_filing_text(detail_url)
+                except Exception as exc:
+                    filing_text = f"[FILING_TEXT_FETCH_FAILED] {exc}"
+
             title = f"{self.company_name} {form_type} filing"
+            summary = clean_text(description or "") or None
+            body_text = filing_text or summary or ""
 
             content_hash = sha256_text(
                 "|".join(
@@ -79,7 +92,8 @@ class SecEdgarCollector:
                         report_date or "",
                         primary_document or "",
                         detail_url,
-                        description or "",
+                        summary or "",
+                        body_text[:5000],
                     ]
                 )
             )
@@ -97,8 +111,8 @@ class SecEdgarCollector:
                 "detail_url": detail_url,
                 "pdf_url": None,
                 "pdf_local_path": None,
-                "summary": description,
-                "body_text": description or "",
+                "summary": summary or body_text[:500],
+                "body_text": body_text,
                 "content_hash": content_hash,
                 "raw_json_url": self.submissions_url,
                 "filing_page_url": filing_page_url,
@@ -107,6 +121,82 @@ class SecEdgarCollector:
             count += 1
             if count >= limit:
                 break
+
+    def _fetch_filing_text(self, detail_url: str) -> str:
+        html = get_html(detail_url, timeout=30.0)
+        soup = BeautifulSoup(html, "lxml")
+
+        # Remove non-content tags.
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+
+        # Remove SEC inline XBRL / metadata blocks.
+        # These are machine-readable tags, not human-readable filing text.
+        for tag in soup.find_all(
+                [
+                    "ix:header",
+                    "ix:hidden",
+                    "ix:references",
+                    "ix:resources",
+                    "xbrli:context",
+                    "xbrli:unit",
+                    "link:schemaRef",
+                ]
+        ):
+            tag.decompose()
+
+        # Some parsers normalize namespace tags differently.
+        for tag in soup.find_all():
+            tag_name = (tag.name or "").lower()
+
+            if tag_name.startswith("ix:"):
+                # Remove inline XBRL tags but keep their visible text only for content tags.
+                if tag_name in {"ix:nonnumeric", "ix:nonfraction"}:
+                    tag.unwrap()
+                else:
+                    tag.decompose()
+
+            elif tag_name.startswith("xbrli:") or tag_name.startswith("link:"):
+                tag.decompose()
+
+        # Prefer SEC document body when available.
+        body = soup.find("body")
+        target = body if body else soup
+
+        text = target.get_text("\n")
+
+        lines = []
+        previous_line = None
+
+        for line in text.splitlines():
+            cleaned = clean_text(line)
+
+            if not cleaned:
+                continue
+
+            # Skip very short noisy machine values.
+            if cleaned.lower() in {"true", "false"}:
+                continue
+
+            # Skip repeated duplicate lines.
+            if cleaned == previous_line:
+                continue
+
+            # Skip obvious SEC/XBRL metadata noise.
+            lower = cleaned.lower()
+            if lower.startswith("aapl-20") and len(cleaned) < 80:
+                continue
+
+            if "0000320193" in cleaned and len(cleaned) < 80:
+                continue
+
+            if cleaned in {"NASDAQ", "NYSE", "USD", "shares"}:
+                continue
+
+            lines.append(cleaned)
+            previous_line = cleaned
+
+        return "\n".join(lines)
 
     def _parse_date(self, value: str | None) -> datetime | None:
         if not value:

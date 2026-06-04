@@ -1,0 +1,25 @@
+news:
+  - name: yahoo_finance_news
+    type: yahoo_finance
+    enabled: false
+    list_url: https://finance.yahoo.com/news/
+    limit: 10
+
+  - name: yahoo_finance_rss
+    type: yahoo_rss
+    enabled: true
+    rss_url: https://finance.yahoo.com/news/rssindex
+    limit: 20
+
+reports:
+  - name: apple_sec
+    type: sec_edgar
+    enabled: true
+    cik: "0000320193"
+    ticker: AAPL
+    company_name: Apple Inc.
+    form_types:
+      - 10-K
+      - 10-Q
+      - 8-K
+    limit: 10

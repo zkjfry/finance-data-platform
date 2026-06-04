@@ -8,6 +8,8 @@ from app.api.response import pagination_meta, success_response
 from app.infrastructure.storage.postgres import get_db_session
 from app.infrastructure.storage.models import NewsArticleModel
 
+import json
+
 router = APIRouter(prefix="/news", tags=["news"])
 
 
@@ -19,6 +21,16 @@ def db_dependency():
         db.close()
 
 
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
 def _news_to_dict(row: NewsArticleModel, relevance: float | None = None) -> dict:
     result = {
         "id": row.id,
@@ -27,8 +39,8 @@ def _news_to_dict(row: NewsArticleModel, relevance: float | None = None) -> dict
         "url": row.url,
         "title": row.title,
         "published_at": row.published_at,
-        "symbols": row.symbols,
-        "authors": row.authors,
+        "symbols": _json_list(row.symbols),
+        "authors": _json_list(row.authors),
         "summary": row.summary,
         "body_text": row.body_text,
         "updated_at": row.updated_at,
@@ -52,16 +64,17 @@ def _news_search_vector():
     return func.to_tsvector(literal("english"), searchable_text)
 
 
+@router.get("/search")
 @router.get("")
 def search_news(
-    keyword: str | None = Query(default=None),
-    source: str | None = Query(default=None),
-    symbol: str | None = Query(default=None),
-    start_date: datetime | None = Query(default=None),
-    end_date: datetime | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(db_dependency),
+        keyword: str | None = Query(default=None),
+        source: str | None = Query(default=None),
+        symbol: str | None = Query(default=None),
+        start_date: datetime | None = Query(default=None),
+        end_date: datetime | None = Query(default=None),
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        db: Session = Depends(db_dependency),
 ) -> dict:
     stmt = select(NewsArticleModel)
 
@@ -127,13 +140,13 @@ def search_news(
 
 @router.get("/latest")
 def latest_news(
-    limit: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(db_dependency),
+        limit: int = Query(default=20, ge=1, le=100),
+        db: Session = Depends(db_dependency),
 ) -> dict:
     stmt = (
         select(NewsArticleModel)
-        .order_by(NewsArticleModel.updated_at.desc())
-        .limit(limit)
+            .order_by(NewsArticleModel.updated_at.desc())
+            .limit(limit)
     )
 
     rows = db.execute(stmt).scalars().all()

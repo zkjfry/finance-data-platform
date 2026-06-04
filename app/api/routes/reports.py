@@ -8,6 +8,8 @@ from app.api.response import pagination_meta, success_response
 from app.infrastructure.storage.postgres import get_db_session
 from app.infrastructure.storage.models import ResearchReportModel
 
+import json
+
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
@@ -17,6 +19,16 @@ def db_dependency():
         yield db
     finally:
         db.close()
+
+
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
 
 
 def _report_to_dict(row: ResearchReportModel, relevance: float | None = None) -> dict:
@@ -29,7 +41,7 @@ def _report_to_dict(row: ResearchReportModel, relevance: float | None = None) ->
         "title": row.title,
         "report_type": row.report_type,
         "published_at": row.published_at,
-        "authors": row.authors,
+        "authors": _json_list(row.authors),
         "detail_url": row.detail_url,
         "pdf_url": row.pdf_url,
         "pdf_local_path": row.pdf_local_path,
@@ -58,18 +70,19 @@ def _report_search_vector():
     return func.to_tsvector(literal("english"), searchable_text)
 
 
+@router.get("/search")
 @router.get("")
 def search_reports(
-    keyword: str | None = Query(default=None),
-    source: str | None = Query(default=None),
-    company: str | None = Query(default=None),
-    ticker: str | None = Query(default=None),
-    report_type: str | None = Query(default=None),
-    start_date: datetime | None = Query(default=None),
-    end_date: datetime | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(db_dependency),
+        keyword: str | None = Query(default=None),
+        source: str | None = Query(default=None),
+        company: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        report_type: str | None = Query(default=None),
+        start_date: datetime | None = Query(default=None),
+        end_date: datetime | None = Query(default=None),
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        db: Session = Depends(db_dependency),
 ) -> dict:
     stmt = select(ResearchReportModel)
 
@@ -143,13 +156,13 @@ def search_reports(
 
 @router.get("/latest")
 def latest_reports(
-    limit: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(db_dependency),
+        limit: int = Query(default=20, ge=1, le=100),
+        db: Session = Depends(db_dependency),
 ) -> dict:
     stmt = (
         select(ResearchReportModel)
-        .order_by(ResearchReportModel.updated_at.desc())
-        .limit(limit)
+            .order_by(ResearchReportModel.updated_at.desc())
+            .limit(limit)
     )
 
     rows = db.execute(stmt).scalars().all()

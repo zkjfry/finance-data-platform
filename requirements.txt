@@ -12,3 +12,4 @@ apscheduler
 tenacity
 pytest
 pymupdf
+pyyaml
