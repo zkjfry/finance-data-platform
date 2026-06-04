@@ -162,25 +162,48 @@ export function CompanyDetailPage() {
                         No price history available.
                     </div>
                 ) : (
-                    <div className="h-72">
+                    <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={toChartData(priceHistory)}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                                <CartesianGrid
+                                    stroke="rgba(148, 163, 184, 0.14)"
+                                    strokeDasharray="4 6"
+                                    vertical={false}
+                                />
+
+                                <XAxis
+                                    dataKey="date"
+                                    tick={{ fontSize: 12, fill: "#64748b" }}
+                                    axisLine={{ stroke: "rgba(148, 163, 184, 0.18)" }}
+                                    tickLine={false}
+                                />
+
                                 <YAxis
-                                    tick={{ fontSize: 12 }}
+                                    tick={{ fontSize: 12, fill: "#64748b" }}
+                                    axisLine={false}
+                                    tickLine={false}
                                     domain={["auto", "auto"]}
                                     tickFormatter={(value) => Number(value).toFixed(0)}
                                 />
+
                                 <Tooltip
+                                    contentStyle={{
+                                        background: "rgba(15, 23, 42, 0.96)",
+                                        border: "1px solid rgba(255,255,255,0.1)",
+                                        borderRadius: "14px",
+                                        color: "#e5e7eb",
+                                    }}
+                                    labelStyle={{ color: "#94a3b8" }}
                                     formatter={(value) => [Number(value).toFixed(2), "Close"]}
                                     labelFormatter={(label) => `Date: ${label}`}
                                 />
+
                                 <Line
                                     type="monotone"
                                     dataKey="close"
                                     dot={false}
-                                    strokeWidth={2}
+                                    stroke="#38bdf8"
+                                    strokeWidth={2.5}
                                 />
                             </LineChart>
                         </ResponsiveContainer>

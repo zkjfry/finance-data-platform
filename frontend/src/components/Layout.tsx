@@ -30,9 +30,9 @@ export function Layout() {
                                 <button
                                     type="button"
                                     className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 transition hover:border-cyan-400/50 hover:text-cyan-300"
-                                    title="Notifications"
+                                    title="Refresh"
                                 >
-                                    ◌
+                                    ↻
                                 </button>
 
                                 <button

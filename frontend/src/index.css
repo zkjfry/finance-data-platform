@@ -118,4 +118,28 @@ a {
   .terminal-badge {
     @apply rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-semibold text-cyan-300;
   }
+
+    .terminal-soft-panel {
+    @apply rounded-2xl border border-white/10 bg-slate-950/35 shadow-xl shadow-black/20 backdrop-blur-xl;
+  }
+
+  .terminal-section-title {
+    @apply text-lg font-semibold tracking-tight text-slate-100;
+  }
+
+  .terminal-section-subtitle {
+    @apply mt-1 text-sm text-slate-500;
+  }
+
+  .terminal-muted-card {
+    @apply rounded-2xl border border-white/10 bg-white/[0.03] shadow-lg shadow-black/10 backdrop-blur-xl transition;
+  }
+
+  .terminal-muted-card:hover {
+    @apply border-cyan-400/30 bg-white/[0.05];
+  }
+
+  .terminal-divider {
+    @apply border-white/10;
+  }
 }
