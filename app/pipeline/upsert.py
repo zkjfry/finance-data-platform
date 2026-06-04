@@ -1,13 +1,17 @@
 import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.company_schemas import MarketPrice
 from app.domain.news_schemas import NewsArticle
 from app.domain.report_schemas import ResearchReport
 from app.infrastructure.storage.models import (
+    MarketPriceModel,
     NewsArticleModel,
-    ResearchReportModel,
     RawDocumentModel,
+    ResearchReportModel,
+    SecurityModel,
 )
 
 
@@ -133,3 +137,49 @@ def insert_raw_document(
     db.commit()
     db.refresh(model)
     return model
+
+
+def find_security_by_ticker(db: Session, ticker: str) -> SecurityModel | None:
+    stmt = select(SecurityModel).where(SecurityModel.ticker == ticker.upper())
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def upsert_market_price(db: Session, price: MarketPrice) -> MarketPriceModel:
+    stmt = select(MarketPriceModel).where(
+        MarketPriceModel.security_id == price.security_id,
+        MarketPriceModel.price_date == price.price_date,
+    )
+
+    existing = db.execute(stmt).scalar_one_or_none()
+
+    if existing is None:
+        model = MarketPriceModel(
+            security_id=price.security_id,
+            price_date=price.price_date,
+            open=price.open,
+            high=price.high,
+            low=price.low,
+            close=price.close,
+            adj_close=price.adj_close,
+            volume=price.volume,
+            source=price.source,
+            inserted_at=price.inserted_at,
+            updated_at=price.updated_at,
+        )
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        return model
+
+    existing.open = price.open
+    existing.high = price.high
+    existing.low = price.low
+    existing.close = price.close
+    existing.adj_close = price.adj_close
+    existing.volume = price.volume
+    existing.source = price.source
+    existing.updated_at = price.updated_at
+
+    db.commit()
+    db.refresh(existing)
+    return existing

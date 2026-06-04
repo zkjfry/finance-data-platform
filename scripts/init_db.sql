@@ -147,3 +147,74 @@ USING GIN (
         coalesce(report_type, '')
     )
 );
+
+CREATE TABLE IF NOT EXISTS companies (
+    id SERIAL PRIMARY KEY,
+    canonical_name VARCHAR(256) NOT NULL,
+    legal_name VARCHAR(256),
+    description TEXT,
+    sector VARCHAR(128),
+    industry VARCHAR(128),
+    country VARCHAR(64),
+    website TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    inserted_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_companies_canonical_name UNIQUE (canonical_name)
+);
+
+CREATE TABLE IF NOT EXISTS securities (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    ticker VARCHAR(64) NOT NULL,
+    exchange VARCHAR(64),
+    currency VARCHAR(16),
+    security_type VARCHAR(64) NOT NULL DEFAULT 'equity',
+    is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+    inserted_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_securities_ticker_exchange UNIQUE (ticker, exchange)
+);
+
+CREATE TABLE IF NOT EXISTS company_aliases (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    alias VARCHAR(256) NOT NULL,
+    alias_type VARCHAR(64) NOT NULL DEFAULT 'name',
+    inserted_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_company_aliases_alias UNIQUE (alias)
+);
+
+CREATE TABLE IF NOT EXISTS market_prices (
+    id SERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id),
+    price_date DATE NOT NULL,
+    open NUMERIC(18, 6),
+    high NUMERIC(18, 6),
+    low NUMERIC(18, 6),
+    close NUMERIC(18, 6),
+    adj_close NUMERIC(18, 6),
+    volume BIGINT,
+    source VARCHAR(128) NOT NULL,
+    inserted_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_market_prices_security_date UNIQUE (security_id, price_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_companies_canonical_name
+ON companies (canonical_name);
+
+CREATE INDEX IF NOT EXISTS idx_company_aliases_alias
+ON company_aliases (alias);
+
+CREATE INDEX IF NOT EXISTS idx_securities_ticker
+ON securities (ticker);
+
+CREATE INDEX IF NOT EXISTS idx_securities_company_id
+ON securities (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_market_prices_security_date
+ON market_prices (security_id, price_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_market_prices_source
+ON market_prices (source);

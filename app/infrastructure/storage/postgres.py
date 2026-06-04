@@ -1,8 +1,8 @@
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from config.settings import get_settings
 from app.infrastructure.storage.models import Base
+from config.settings import get_settings
 
 settings = get_settings()
 
@@ -59,6 +59,12 @@ SEARCH_INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_crawl_runs_source ON crawl_runs (source)",
     "CREATE INDEX IF NOT EXISTS idx_crawl_runs_status ON crawl_runs (status)",
     "CREATE INDEX IF NOT EXISTS idx_crawl_runs_started_at ON crawl_runs (started_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_companies_canonical_name ON companies (canonical_name)",
+    "CREATE INDEX IF NOT EXISTS idx_company_aliases_alias ON company_aliases (alias)",
+    "CREATE INDEX IF NOT EXISTS idx_securities_ticker ON securities (ticker)",
+    "CREATE INDEX IF NOT EXISTS idx_securities_company_id ON securities (company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_market_prices_security_date ON market_prices (security_id, price_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_market_prices_source ON market_prices (source)",
 ]
 
 
@@ -69,9 +75,20 @@ def get_db_session() -> Session:
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     create_indexes()
+    seed_reference_data()
 
 
 def create_indexes() -> None:
     with engine.begin() as conn:
         for statement in SEARCH_INDEX_STATEMENTS:
             conn.execute(text(statement))
+
+
+def seed_reference_data() -> None:
+    from app.pipeline.company_seed import seed_default_companies
+
+    db = get_db_session()
+    try:
+        seed_default_companies(db)
+    finally:
+        db.close()

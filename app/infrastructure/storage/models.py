@@ -1,4 +1,16 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -96,3 +108,72 @@ class CrawlRunModel(Base):
     items_failed = Column(Integer, nullable=False, default=0)
 
     error_message = Column(Text, nullable=True)
+
+
+class CompanyModel(Base):
+    __tablename__ = "companies"
+    __table_args__ = (
+        UniqueConstraint("canonical_name", name="uq_companies_canonical_name"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_name = Column(String(256), nullable=False)
+    legal_name = Column(String(256), nullable=True)
+    description = Column(Text, nullable=True)
+    sector = Column(String(128), nullable=True)
+    industry = Column(String(128), nullable=True)
+    country = Column(String(64), nullable=True)
+    website = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    inserted_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class SecurityModel(Base):
+    __tablename__ = "securities"
+    __table_args__ = (
+        UniqueConstraint("ticker", "exchange", name="uq_securities_ticker_exchange"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    ticker = Column(String(64), nullable=False)
+    exchange = Column(String(64), nullable=True)
+    currency = Column(String(16), nullable=True)
+    security_type = Column(String(64), nullable=False, default="equity")
+    is_primary = Column(Boolean, nullable=False, default=True)
+    inserted_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class CompanyAliasModel(Base):
+    __tablename__ = "company_aliases"
+    __table_args__ = (
+        UniqueConstraint("alias", name="uq_company_aliases_alias"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    alias = Column(String(256), nullable=False)
+    alias_type = Column(String(64), nullable=False, default="name")
+    inserted_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class MarketPriceModel(Base):
+    __tablename__ = "market_prices"
+    __table_args__ = (
+        UniqueConstraint("security_id", "price_date", name="uq_market_prices_security_date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    security_id = Column(Integer, ForeignKey("securities.id"), nullable=False)
+    price_date = Column(Date, nullable=False)
+    open = Column(Numeric(18, 6), nullable=True)
+    high = Column(Numeric(18, 6), nullable=True)
+    low = Column(Numeric(18, 6), nullable=True)
+    close = Column(Numeric(18, 6), nullable=True)
+    adj_close = Column(Numeric(18, 6), nullable=True)
+    volume = Column(BigInteger, nullable=True)
+    source = Column(String(128), nullable=False)
+    inserted_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)

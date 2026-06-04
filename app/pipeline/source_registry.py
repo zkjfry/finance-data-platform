@@ -28,9 +28,21 @@ class ReportSourceConfig(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
 
 
+class PriceSourceConfig(BaseModel):
+    name: str
+    type: Literal["yfinance"]
+    enabled: bool = True
+    tickers: list[str] = Field(default_factory=list)
+    period: str = "6mo"
+    interval: str = "1d"
+    start_date: str | None = None
+    end_date: str | None = None
+
+
 class SourceRegistry(BaseModel):
     news: list[NewsSourceConfig] = Field(default_factory=list)
     reports: list[ReportSourceConfig] = Field(default_factory=list)
+    prices: list[PriceSourceConfig] = Field(default_factory=list)
 
 
 def load_source_registry(path: str | Path = CONFIG_PATH) -> SourceRegistry:
@@ -52,3 +64,8 @@ def enabled_news_sources(registry: SourceRegistry | None = None) -> list[NewsSou
 def enabled_report_sources(registry: SourceRegistry | None = None) -> list[ReportSourceConfig]:
     registry = registry or load_source_registry()
     return [source for source in registry.reports if source.enabled]
+
+
+def enabled_price_sources(registry: SourceRegistry | None = None) -> list[PriceSourceConfig]:
+    registry = registry or load_source_registry()
+    return [source for source in registry.prices if source.enabled]

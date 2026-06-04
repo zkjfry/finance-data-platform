@@ -23,3 +23,16 @@ reports:
       - 10-Q
       - 8-K
     limit: 10
+
+prices:
+  - name: yfinance_daily_prices
+    type: yfinance
+    enabled: true
+    tickers:
+      - AAPL
+      - MSFT
+      - NVDA
+      - TSLA
+      - AMZN
+    period: 6mo
+    interval: 1d

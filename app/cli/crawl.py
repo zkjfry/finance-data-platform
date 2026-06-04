@@ -2,6 +2,7 @@ import argparse
 import traceback
 
 from app.cli.crawl_news import run_news_crawl_once
+from app.cli.crawl_prices import run_prices_crawl_once
 from app.cli.crawl_reports import run_reports_crawl_once
 
 
@@ -21,7 +22,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run finance data crawlers")
     parser.add_argument(
         "--target",
-        choices=["news", "reports", "all"],
+        choices=["news", "reports", "prices", "all"],
         required=True,
         help="Crawler target to run",
     )
@@ -36,14 +37,20 @@ def main() -> None:
         result = _safe_run("reports", run_reports_crawl_once)
         print(result)
 
+    elif args.target == "prices":
+        result = _safe_run("prices", run_prices_crawl_once)
+        print(result)
+
     elif args.target == "all":
         news_result = _safe_run("news", run_news_crawl_once)
         reports_result = _safe_run("reports", run_reports_crawl_once)
+        prices_result = _safe_run("prices", run_prices_crawl_once)
 
         print(
             {
                 "news": news_result,
                 "reports": reports_result,
+                "prices": prices_result,
             }
         )
 

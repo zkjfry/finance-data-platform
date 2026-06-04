@@ -13,3 +13,6 @@ tenacity
 pytest
 pymupdf
 pyyaml
+numpy==1.26.4
+pandas==2.2.3
+yfinance
