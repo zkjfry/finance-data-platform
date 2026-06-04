@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { StateBlock } from "../components/ui/StateBlock";
 import {
     Line,
     LineChart,
@@ -29,21 +30,18 @@ export function CompanyDetailPage() {
     });
 
     if (isLoading) {
-        return (
-            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
-                Loading company detail...
-            </div>
-        );
+        return <StateBlock type="loading" message="Loading company detail..." />;
     }
 
     if (error || !data) {
         return (
             <div className="space-y-4">
-                <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
-                    Failed to load company detail.
-                </div>
+                <StateBlock type="error" message="Failed to load company detail." />
 
-                <Link to="/companies" className="text-sm text-cyan-400 hover:text-cyan-300">
+                <Link
+                    to="/companies"
+                    className="text-sm text-cyan-400 transition hover:text-cyan-300"
+                >
                     Back to company search
                 </Link>
             </div>

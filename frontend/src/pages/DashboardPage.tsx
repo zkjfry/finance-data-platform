@@ -75,7 +75,7 @@ export function DashboardPage() {
               </thead>
 
               <tbody className="divide-y divide-white/10">
-                {latestRuns.map((run: any) => (
+                {latestRuns.map((run) => (
                   <tr key={run.id} className="bg-slate-900/20 transition hover:bg-white/[0.03]">
                     <td className="px-4 py-3 font-medium text-slate-200">
                       {run.crawler_name}
