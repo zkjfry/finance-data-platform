@@ -1,0 +1,17 @@
+name: Ping Render Backend
+
+# 定时任务，每 10 分钟执行一次
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:  # 可以手动触发
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Curl Render health
+        run: |
+          echo "Pinging Render backend..."
+          curl -s https://finance-data-platform-api.onrender.com/health
