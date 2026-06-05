@@ -24,10 +24,15 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str:
-        return (
+        url = (
             f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+        if self.app_env != "local":
+            url += "?sslmode=require"
+
+        return url
 
 
 @lru_cache
