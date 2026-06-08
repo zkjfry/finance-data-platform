@@ -19,6 +19,9 @@ from app.infrastructure.storage.postgres import get_db_session
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+SPARKLINE_DAYS = 30
+
+
 def db_dependency():
     db = get_db_session()
     try:
@@ -81,8 +84,9 @@ def _report_to_dict(row: ResearchReportModel) -> dict:
 
 def _latest_two_prices_by_security(db: Session):
     """
-    Returns a dict:
-    security_id -> [latest_price, previous_price]
+    Returns:
+    - primary securities
+    - security_id -> [latest_price, previous_price]
     """
     securities = db.execute(
         select(SecurityModel)
@@ -103,6 +107,26 @@ def _latest_two_prices_by_security(db: Session):
         result[security.id] = prices
 
     return securities, result
+
+
+def _sparkline_for_security(db: Session, security_id: int) -> list[dict]:
+    """
+    Return recent close prices ordered from oldest to newest for frontend sparkline.
+    """
+    prices = db.execute(
+        select(MarketPriceModel)
+        .where(MarketPriceModel.security_id == security_id)
+        .order_by(MarketPriceModel.price_date.desc())
+        .limit(SPARKLINE_DAYS)
+    ).scalars().all()
+
+    return [
+        {
+            "date": row.price_date.isoformat() if row.price_date else None,
+            "close": _to_float(row.close),
+        }
+        for row in reversed(prices)
+    ]
 
 
 def _build_market_cards(db: Session):
@@ -151,11 +175,12 @@ def _build_market_cards(db: Session):
             "currency": security.currency,
             "sector": company.sector if company else None,
             "industry": company.industry if company else None,
-            "price_date": latest.price_date,
+            "price_date": latest.price_date.isoformat() if latest.price_date else None,
             "close": latest_close,
             "previous_close": previous_close,
             "change": change,
             "change_pct": change_pct,
+            "sparkline": _sparkline_for_security(db, security.id),
         })
 
     return cards

@@ -25,6 +25,11 @@ export type CrawlRun = {
   error_message?: string | null;
 };
 
+export type SparklinePoint = {
+  date?: string | null;
+  close?: number | null;
+};
+
 export type MarketDashboardItem = {
   ticker: string;
   company_name: string;
@@ -37,6 +42,7 @@ export type MarketDashboardItem = {
   previous_close?: number | null;
   change?: number | null;
   change_pct?: number | null;
+  sparkline?: SparklinePoint[];
 };
 
 export type DashboardNewsItem = {

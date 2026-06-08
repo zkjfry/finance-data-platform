@@ -54,5 +54,5 @@ prices:
       - CRM
       - ORCL
       - AVGO
-    period: 6mo
+    period: 1y
     interval: 1d

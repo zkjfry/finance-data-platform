@@ -119,7 +119,7 @@ function MarketOverviewCard({ item }: { item: MarketDashboardItem }) {
         </div>
 
         <div className="mt-4 h-8">
-          <MiniSparkline positive={positive} />
+          <MiniSparkline data={item.sparkline} positive={positive} />
         </div>
       </div>
     </Link>
@@ -476,17 +476,70 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function MiniSparkline({ positive }: { positive: boolean }) {
-  const color = positive ? "#22c55e" : "#fb7185";
+function MiniSparkline({
+  data,
+  positive,
+}: {
+  data?: { date?: string | null; close?: number | null }[];
+  positive: boolean;
+}) {
+  const points = (data ?? []).filter(
+    (item): item is { date?: string | null; close: number } =>
+      typeof item.close === "number"
+  );
+
+  if (points.length < 2) {
+    return (
+      <div className="flex h-full items-center text-xs text-slate-500">
+        No price data
+      </div>
+    );
+  }
+
+  const width = 120;
+  const height = 32;
+  const padding = 3;
+
+  const values = points.map((point) => point.close);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const path = points
+    .map((point, index) => {
+      const x =
+        padding +
+        (index / (points.length - 1)) * (width - padding * 2);
+
+      const y =
+        height -
+        padding -
+        ((point.close - min) / range) * (height - padding * 2);
+
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  const areaPath = `${path} L ${width - padding} ${height - padding} L ${padding} ${height - padding
+    } Z`;
+
+  const strokeColor = positive ? "#22c55e" : "#fb7185";
+  const fillColor = positive ? "rgba(34, 197, 94, 0.12)" : "rgba(251, 113, 133, 0.12)";
 
   return (
-    <svg viewBox="0 0 120 32" className="h-full w-full">
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-full w-full overflow-visible"
+      preserveAspectRatio="none"
+    >
+      <path d={areaPath} fill={fillColor} />
       <path
-        d="M0 24 C 16 18, 20 26, 34 16 S 58 8, 72 14 S 94 28, 120 8"
+        d={path}
         fill="none"
-        stroke={color}
-        strokeWidth="2.5"
+        stroke={strokeColor}
+        strokeWidth="2.4"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
