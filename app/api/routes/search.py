@@ -1,12 +1,19 @@
 from datetime import datetime
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.response import success_response
+from app.infrastructure.storage.models import (
+    CompanyAliasModel,
+    CompanyModel,
+    NewsArticleModel,
+    ResearchReportModel,
+    SecurityModel,
+)
 from app.infrastructure.storage.postgres import get_db_session
-from app.infrastructure.storage.models import NewsArticleModel, ResearchReportModel
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -17,6 +24,16 @@ def db_dependency():
         yield db
     finally:
         db.close()
+
+
+def _to_float(value):
+    if value is None:
+        return None
+
+    if isinstance(value, Decimal):
+        return float(value)
+
+    return value
 
 
 def _news_vector():
@@ -47,18 +64,108 @@ def _report_vector():
     )
 
 
+def _company_to_result(company: CompanyModel, security: SecurityModel | None) -> dict:
+    return {
+        "type": "company",
+        "id": company.id,
+        "company_name": company.canonical_name,
+        "legal_name": company.legal_name,
+        "description": company.description,
+        "sector": company.sector,
+        "industry": company.industry,
+        "country": company.country,
+        "website": company.website,
+        "ticker": security.ticker if security else None,
+        "exchange": security.exchange if security else None,
+        "currency": security.currency if security else None,
+        "security_type": security.security_type if security else None,
+    }
+
+
+def _news_to_result(row: NewsArticleModel, relevance=None) -> dict:
+    return {
+        "type": "news",
+        "id": row.id,
+        "source": row.source,
+        "article_id": row.article_id,
+        "title": row.title,
+        "url": row.url,
+        "published_at": row.published_at,
+        "ticker": row.symbols,
+        "summary": row.summary,
+        "relevance": _to_float(relevance) or 0,
+    }
+
+
+def _report_to_result(row: ResearchReportModel, relevance=None) -> dict:
+    return {
+        "type": "report",
+        "id": row.id,
+        "source": row.source,
+        "report_id": row.report_id,
+        "company_name": row.company_name,
+        "ticker": row.ticker,
+        "title": row.title,
+        "report_type": row.report_type,
+        "url": row.pdf_url or row.detail_url,
+        "detail_url": row.detail_url,
+        "pdf_url": row.pdf_url,
+        "published_at": row.published_at,
+        "summary": row.summary,
+        "relevance": _to_float(relevance) or 0,
+    }
+
+
 @router.get("")
 def global_search(
-    keyword: str = Query(..., min_length=1),
+    q: str | None = Query(default=None),
+    keyword: str | None = Query(default=None),
     source: str | None = Query(default=None),
     ticker: str | None = Query(default=None),
     start_date: datetime | None = Query(default=None),
     end_date: datetime | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=8, ge=1, le=50),
     db: Session = Depends(db_dependency),
 ) -> dict:
-    ts_query = func.websearch_to_tsquery(literal("english"), keyword)
-    keyword_like = f"%{keyword}%"
+    search_text = (q or keyword or "").strip()
+
+    if not search_text:
+        raise HTTPException(status_code=400, detail="Search keyword is required.")
+
+    keyword_like = f"%{search_text}%"
+
+    company_stmt = (
+        select(CompanyModel, SecurityModel)
+        .join(
+            SecurityModel,
+            (SecurityModel.company_id == CompanyModel.id)
+            & (SecurityModel.is_primary.is_(True)),
+            isouter=True,
+        )
+        .outerjoin(CompanyAliasModel, CompanyAliasModel.company_id == CompanyModel.id)
+        .where(
+            or_(
+                CompanyModel.canonical_name.ilike(keyword_like),
+                CompanyModel.legal_name.ilike(keyword_like),
+                CompanyModel.description.ilike(keyword_like),
+                CompanyModel.sector.ilike(keyword_like),
+                CompanyModel.industry.ilike(keyword_like),
+                SecurityModel.ticker.ilike(keyword_like),
+                CompanyAliasModel.alias.ilike(keyword_like),
+            )
+        )
+        .group_by(CompanyModel.id, SecurityModel.id)
+        .order_by(CompanyModel.canonical_name.asc())
+        .limit(limit)
+    )
+
+    company_rows = db.execute(company_stmt).all()
+    companies = [
+        _company_to_result(company, security)
+        for company, security in company_rows
+    ]
+
+    ts_query = func.websearch_to_tsquery(literal("english"), search_text)
 
     news_relevance = func.ts_rank_cd(_news_vector(), ts_query).label("relevance")
 
@@ -92,6 +199,11 @@ def global_search(
         )
         .limit(limit)
     )
+
+    news = [
+        _news_to_result(row, relevance)
+        for row, relevance in db.execute(news_stmt).all()
+    ]
 
     report_relevance = func.ts_rank_cd(_report_vector(), ts_query).label("relevance")
 
@@ -128,48 +240,26 @@ def global_search(
         .limit(limit)
     )
 
-    results: list[dict] = []
-
-    for row, relevance in db.execute(news_stmt).all():
-        results.append(
-            {
-                "type": "news",
-                "id": row.id,
-                "source": row.source,
-                "title": row.title,
-                "url": row.url,
-                "published_at": row.published_at,
-                "ticker": row.symbols,
-                "summary": row.summary,
-                "relevance": float(relevance),
-            }
-        )
-
-    for row, relevance in db.execute(report_stmt).all():
-        results.append(
-            {
-                "type": "report",
-                "id": row.id,
-                "source": row.source,
-                "title": row.title,
-                "url": row.detail_url or row.pdf_url,
-                "published_at": row.published_at,
-                "ticker": row.ticker,
-                "company_name": row.company_name,
-                "summary": row.summary,
-                "relevance": float(relevance),
-            }
-        )
-
-    results.sort(
-        key=lambda item: (
-            item["relevance"],
-            item["published_at"].timestamp() if item["published_at"] else 0,
-        ),
-        reverse=True,
-    )
+    reports = [
+        _report_to_result(row, relevance)
+        for row, relevance in db.execute(report_stmt).all()
+    ]
 
     return success_response(
-        data=results[:limit],
-        meta={"keyword": keyword, "limit": limit},
+        data={
+            "keyword": search_text,
+            "companies": companies,
+            "news": news,
+            "reports": reports,
+            "total": len(companies) + len(news) + len(reports),
+        },
+        meta={
+            "keyword": search_text,
+            "limit": limit,
+            "counts": {
+                "companies": len(companies),
+                "news": len(news),
+                "reports": len(reports),
+            },
+        },
     )

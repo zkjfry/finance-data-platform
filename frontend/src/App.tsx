@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { MarketsPage } from "./pages/MarketsPage";
 import { NewsPage } from "./pages/NewsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { SearchPage } from "./pages/SearchPage";
 
 const router = createHashRouter([
   {
@@ -35,6 +36,10 @@ const router = createHashRouter([
       {
         path: "reports",
         element: <ReportsPage />,
+      },
+      {
+        path: "search",
+        element: <SearchPage />,
       },
     ],
   },
