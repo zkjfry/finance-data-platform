@@ -34,5 +34,25 @@ prices:
       - NVDA
       - TSLA
       - AMZN
+      - GOOGL
+      - META
+      - NFLX
+      - AMD
+      - INTC
+      - JPM
+      - BAC
+      - GS
+      - MS
+      - V
+      - MA
+      - WMT
+      - COST
+      - DIS
+      - KO
+      - PEP
+      - NKE
+      - CRM
+      - ORCL
+      - AVGO
     period: 6mo
     interval: 1d

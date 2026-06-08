@@ -14,4 +14,4 @@ jobs:
       - name: Curl Render health
         run: |
           echo "Pinging Render backend..."
-          curl -s https://finance-data-platform-api.onrender.com/health
+          curl -s https://finance-data-platform.onrender.com/health
