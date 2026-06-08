@@ -24,6 +24,7 @@ export type SearchNewsResult = {
   title: string;
   url?: string | null;
   published_at?: string | null;
+  symbols?: string[];
   ticker?: string | null;
   summary?: string | null;
   relevance?: number;
@@ -48,6 +49,8 @@ export type SearchReportResult = {
 
 export type GlobalSearchResponse = {
   keyword: string;
+  expanded_terms?: string[];
+  matched_tickers?: string[];
   companies: SearchCompanyResult[];
   news: SearchNewsResult[];
   reports: SearchReportResult[];

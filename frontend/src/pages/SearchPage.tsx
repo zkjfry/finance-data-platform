@@ -195,6 +195,8 @@ function CompanyResultCard({ item }: { item: SearchCompanyResult }) {
 }
 
 function NewsResultCard({ item }: { item: SearchNewsResult }) {
+  const symbols = formatSymbols(item.symbols, item.ticker);
+
   const content = (
     <div className="terminal-muted-card p-4">
       <div className="flex items-start justify-between gap-4">
@@ -202,14 +204,16 @@ function NewsResultCard({ item }: { item: SearchNewsResult }) {
           <h3 className="line-clamp-2 font-semibold text-slate-100">
             {item.title}
           </h3>
+
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>{item.source ?? "news"}</span>
             <span>•</span>
             <span>{formatDateTime(item.published_at)}</span>
-            {item.ticker && (
+
+            {symbols && (
               <>
                 <span>•</span>
-                <span className="text-cyan-300">{item.ticker}</span>
+                <span className="text-cyan-300">{symbols}</span>
               </>
             )}
           </div>
@@ -220,7 +224,7 @@ function NewsResultCard({ item }: { item: SearchNewsResult }) {
 
       {item.summary && (
         <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">
-          {item.summary}
+          {stripHtmlTags(item.summary)}
         </p>
       )}
     </div>
@@ -294,6 +298,33 @@ function EmptyMini({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function formatSymbols(symbols?: string[], ticker?: string | null) {
+  if (symbols && symbols.length > 0) {
+    return symbols.join(", ");
+  }
+
+  if (!ticker) {
+    return "";
+  }
+
+  const cleaned = ticker
+    .replace("[", "")
+    .replace("]", "")
+    .replaceAll('"', "")
+    .replaceAll("'", "")
+    .trim();
+
+  if (!cleaned) {
+    return "";
+  }
+
+  return cleaned;
+}
+
+function stripHtmlTags(value: string) {
+  return value.replace(/<[^>]*>/g, "").trim();
 }
 
 function formatDateTime(value?: string | null) {
