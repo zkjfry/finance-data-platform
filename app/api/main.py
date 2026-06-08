@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.companies import router as companies_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.health import router as health_router
+from app.api.routes.markets import router as markets_router
 from app.api.routes.news import router as news_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.search import router as search_router
@@ -59,4 +60,5 @@ app.include_router(reports_router)
 app.include_router(search_router)
 app.include_router(sources_router)
 app.include_router(companies_router)
+app.include_router(markets_router)
 app.include_router(dashboard_router)

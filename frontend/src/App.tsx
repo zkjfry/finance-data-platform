@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { CompanyDetailPage } from "./pages/CompanyDetailPage";
 import { CompanySearchPage } from "./pages/CompanySearchPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { MarketsPage } from "./pages/MarketsPage";
 import { NewsPage } from "./pages/NewsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 
@@ -14,6 +15,10 @@ const router = createHashRouter([
       {
         index: true,
         element: <DashboardPage />,
+      },
+      {
+        path: "markets",
+        element: <MarketsPage />,
       },
       {
         path: "companies",
