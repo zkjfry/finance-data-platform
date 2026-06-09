@@ -1,6 +1,7 @@
 import json
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.domain.company_schemas import DocumentCompanyLink, MarketPrice
@@ -113,15 +114,15 @@ def upsert_research_report(db: Session, report: ResearchReport) -> ResearchRepor
 
 
 def insert_raw_document(
-    db: Session,
-    source: str,
-    source_type: str,
-    url: str,
-    content_type: str,
-    content_hash: str,
-    fetched_at,
-    local_path: str | None = None,
-    raw_text: str | None = None,
+        db: Session,
+        source: str,
+        source_type: str,
+        url: str,
+        content_type: str,
+        content_hash: str,
+        fetched_at,
+        local_path: str | None = None,
+        raw_text: str | None = None,
 ) -> RawDocumentModel:
     model = RawDocumentModel(
         source=source,
@@ -185,9 +186,58 @@ def upsert_market_price(db: Session, price: MarketPrice) -> MarketPriceModel:
     db.refresh(existing)
     return existing
 
+
+def bulk_upsert_market_prices(
+        db: Session,
+        prices: list[MarketPrice],
+) -> int:
+    if not prices:
+        return 0
+
+    values = [
+        {
+            "security_id": price.security_id,
+            "price_date": price.price_date,
+            "open": price.open,
+            "high": price.high,
+            "low": price.low,
+            "close": price.close,
+            "adj_close": price.adj_close,
+            "volume": price.volume,
+            "source": price.source,
+            "inserted_at": price.inserted_at,
+            "updated_at": price.updated_at,
+        }
+        for price in prices
+    ]
+
+    stmt = insert(MarketPriceModel).values(values)
+
+    update_columns = {
+        "open": stmt.excluded.open,
+        "high": stmt.excluded.high,
+        "low": stmt.excluded.low,
+        "close": stmt.excluded.close,
+        "adj_close": stmt.excluded.adj_close,
+        "volume": stmt.excluded.volume,
+        "source": stmt.excluded.source,
+        "updated_at": stmt.excluded.updated_at,
+    }
+
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_market_prices_security_date",
+        set_=update_columns,
+    )
+
+    db.execute(stmt)
+    db.commit()
+
+    return len(values)
+
+
 def upsert_document_company_link(
-    db: Session,
-    link: DocumentCompanyLink,
+        db: Session,
+        link: DocumentCompanyLink,
 ) -> DocumentCompanyLinkModel:
     stmt = select(DocumentCompanyLinkModel).where(
         DocumentCompanyLinkModel.document_type == link.document_type,

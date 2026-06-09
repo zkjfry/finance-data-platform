@@ -1,11 +1,14 @@
-from app.collectors.prices.yfinance_price import YFinancePriceCollector
+from app.collectors.prices.yfinance_price import YFinanceBatchPriceCollector
 from app.common.time_utils import utc_now
 from app.domain.company_schemas import MarketPrice
 from app.infrastructure.storage.postgres import get_db_session, init_db
 from app.pipeline.crawl_run_logger import finish_crawl_run, start_crawl_run
 from app.pipeline.source_registry import enabled_price_sources
 from app.pipeline.state_tracker import update_crawl_state
-from app.pipeline.upsert import find_security_by_ticker, upsert_market_price
+from app.pipeline.upsert import (
+    bulk_upsert_market_prices,
+    find_security_by_ticker,
+)
 
 
 def run_prices_crawl_once() -> dict:
@@ -33,8 +36,16 @@ def run_prices_crawl_once() -> dict:
             final_status = "success"
 
             try:
-                for ticker in source_config.tickers:
-                    ticker = ticker.upper()
+                tickers = [
+                    ticker.upper()
+                    for ticker in source_config.tickers
+                    if ticker
+                ]
+
+                securities_by_ticker = {}
+                valid_tickers = []
+
+                for ticker in tickers:
                     security = find_security_by_ticker(db, ticker)
 
                     if security is None:
@@ -50,36 +61,58 @@ def run_prices_crawl_once() -> dict:
                         print(f"[PRICE ERROR] ticker={ticker} error=security_not_found")
                         continue
 
-                    try:
-                        collector = YFinancePriceCollector(
-                            ticker=ticker,
-                            source_name=source_config.name,
-                            period=source_config.period,
-                            interval=source_config.interval,
-                            start_date=source_config.start_date,
-                            end_date=source_config.end_date,
-                        )
+                    securities_by_ticker[ticker] = security
+                    valid_tickers.append(ticker)
 
-                        raw_prices = collector.collect()
+                if valid_tickers:
+                    collector = YFinanceBatchPriceCollector(
+                        tickers=valid_tickers,
+                        source_name=source_config.name,
+                        period=source_config.period,
+                        interval=source_config.interval,
+                        start_date=source_config.start_date,
+                        end_date=source_config.end_date,
+                    )
+
+                    raw_prices_by_ticker = collector.collect()
+                    price_models: list[MarketPrice] = []
+
+                    for ticker in valid_tickers:
+                        raw_prices = raw_prices_by_ticker.get(ticker, [])
                         items_fetched += len(raw_prices)
+
+                        if not raw_prices:
+                            items_failed += 1
+                            update_crawl_state(
+                                db=db,
+                                source=source_config.name,
+                                target_key=ticker,
+                                content_hash=None,
+                                status="failed",
+                                error_message="No price rows returned from yfinance.",
+                            )
+                            print(f"[PRICE ERROR] ticker={ticker} error=no_price_rows")
+                            continue
+
+                        security = securities_by_ticker[ticker]
 
                         for raw in raw_prices:
                             now = utc_now()
-                            price = MarketPrice(
-                                security_id=security.id,
-                                price_date=raw["price_date"],
-                                open=raw.get("open"),
-                                high=raw.get("high"),
-                                low=raw.get("low"),
-                                close=raw.get("close"),
-                                adj_close=raw.get("adj_close"),
-                                volume=raw.get("volume"),
-                                source=raw["source"],
-                                inserted_at=now,
-                                updated_at=now,
+                            price_models.append(
+                                MarketPrice(
+                                    security_id=security.id,
+                                    price_date=raw["price_date"],
+                                    open=raw.get("open"),
+                                    high=raw.get("high"),
+                                    low=raw.get("low"),
+                                    close=raw.get("close"),
+                                    adj_close=raw.get("adj_close"),
+                                    volume=raw.get("volume"),
+                                    source=raw["source"],
+                                    inserted_at=now,
+                                    updated_at=now,
+                                )
                             )
-                            upsert_market_price(db, price)
-                            items_inserted += 1
 
                         update_crawl_state(
                             db=db,
@@ -94,17 +127,11 @@ def run_prices_crawl_once() -> dict:
                             f"ticker={ticker} rows={len(raw_prices)}"
                         )
 
-                    except Exception as exc:
-                        items_failed += 1
-                        update_crawl_state(
+                    if price_models:
+                        items_inserted = bulk_upsert_market_prices(
                             db=db,
-                            source=source_config.name,
-                            target_key=ticker,
-                            content_hash=None,
-                            status="failed",
-                            error_message=str(exc),
+                            prices=price_models,
                         )
-                        print(f"[PRICE ERROR] ticker={ticker} error={exc}")
 
                 final_status = "success" if items_failed == 0 else "partial_success"
 
