@@ -1,22 +1,14 @@
-name: Crawl Finance Data Manual
+name: Crawl Reports
 
 on:
+  schedule:
+    # Singapore 09:00 = UTC 01:00
+    - cron: "0 1 * * *"
+
   workflow_dispatch:
-    inputs:
-      target:
-        description: "Crawler target to run"
-        required: true
-        default: "all"
-        type: choice
-        options:
-          - all
-          - prices
-          - news
-          - reports
-          - link_companies
 
 jobs:
-  crawl-data:
+  crawl-reports:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -79,15 +71,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run selected crawler
-        if: github.event.inputs.target != 'all'
+      - name: Crawl reports
         run: |
-          python -m app.cli.crawl --target "${{ github.event.inputs.target }}"
-
-      - name: Run all crawlers
-        if: github.event.inputs.target == 'all'
-        run: |
-          python -m app.cli.crawl --target prices
-          python -m app.cli.crawl --target news
           python -m app.cli.crawl --target reports
+
+      - name: Link companies
+        run: |
           python -m app.cli.crawl --target link_companies
