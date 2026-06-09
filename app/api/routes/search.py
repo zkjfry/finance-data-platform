@@ -39,7 +39,7 @@ def _to_float(value):
 
 def _normalize_symbols(value) -> list[str]:
     """
-    news_articles.symbols is stored as Text, but rows may contain JSON-like strings:
+    news_articles.symbols is stored as Text, but many rows contain JSON-like strings:
     - '["NVDA"]'
     - '[]'
     - 'NVDA'
@@ -128,6 +128,7 @@ def _news_to_result(
         matched_tickers: list[str] | None = None,
 ) -> dict:
     symbols = _normalize_symbols(row.symbols)
+
     display_symbols = symbols
 
     if not display_symbols and matched_tickers:
@@ -183,12 +184,12 @@ def _report_to_result(row: ResearchReportModel, relevance=None) -> dict:
 def _detect_company_matches(db: Session, search_text: str):
     """
     Match company identity only:
-    - company canonical name
-    - legal name
+    - canonical_name
+    - legal_name
     - ticker
     - alias
 
-    Do NOT include sector / industry here.
+    Do not match sector / industry here.
     """
     keyword_like = f"%{search_text}%"
 
@@ -218,9 +219,12 @@ def _detect_company_matches(db: Session, search_text: str):
 
 def _detect_sector_matches(db: Session, search_text: str):
     """
-    Match category intent:
-    - sector
-    - industry
+    Match sector / industry only.
+
+    Example:
+    - technology
+    - semiconductors
+    - consumer electronics
     """
     keyword_like = f"%{search_text}%"
 
@@ -233,41 +237,14 @@ def _detect_sector_matches(db: Session, search_text: str):
             isouter=True,
         )
             .where(
+            CompanyModel.is_active.is_(True),
             or_(
                 CompanyModel.sector.ilike(keyword_like),
                 CompanyModel.industry.ilike(keyword_like),
-            )
+            ),
         )
             .order_by(CompanyModel.canonical_name.asc())
     ).all()
-
-
-def _dedupe_company_rows_with_alias(rows) -> list[tuple[CompanyModel, SecurityModel | None, CompanyAliasModel | None]]:
-    seen_company_ids: set[int] = set()
-    results = []
-
-    for company, security, alias in rows:
-        if company.id in seen_company_ids:
-            continue
-
-        seen_company_ids.add(company.id)
-        results.append((company, security, alias))
-
-    return results
-
-
-def _dedupe_sector_rows(rows) -> list[tuple[CompanyModel, SecurityModel | None]]:
-    seen_company_ids: set[int] = set()
-    results = []
-
-    for company, security in rows:
-        if company.id in seen_company_ids:
-            continue
-
-        seen_company_ids.add(company.id)
-        results.append((company, security))
-
-    return results
 
 
 def _is_exact_company_match(
@@ -276,7 +253,7 @@ def _is_exact_company_match(
         security: SecurityModel | None,
         alias: CompanyAliasModel | None,
 ) -> bool:
-    normalized_query = search_text.strip().lower()
+    query = search_text.strip().lower()
 
     candidates = [
         company.canonical_name,
@@ -285,36 +262,25 @@ def _is_exact_company_match(
         alias.alias if alias else None,
     ]
 
-    normalized_candidates = {
+    normalized_candidates = [
         str(item).strip().lower()
         for item in candidates
         if item
-    }
+    ]
 
-    return normalized_query in normalized_candidates
+    return query in normalized_candidates
 
 
 def _detect_search_intent(db: Session, search_text: str) -> dict:
     """
-    Search intent rules:
+    Intent priority:
+    1. Exact company / ticker / alias match
+    2. Partial company / ticker / alias match
+    3. Sector / industry match
+    4. General keyword search
 
-    1. If query exactly matches a company/ticker/alias, treat as company intent.
-       Example:
-       - nvda
-       - nvidia
-       - NVIDIA Corporation
-
-    2. If query partially matches company/ticker/alias, treat as company intent.
-       Example:
-       - nvid
-       - micro
-
-    3. If no company match but sector/industry matches, treat as sector intent.
-       Example:
-       - technology
-       - semiconductors
-
-    4. Otherwise, general intent.
+    This prevents:
+    nvidia -> NVIDIA -> Technology/Semiconductors -> AMD/INTC/AVGO
     """
     company_rows = _detect_company_matches(db, search_text)
     sector_rows = _detect_sector_matches(db, search_text)
@@ -333,14 +299,14 @@ def _detect_search_intent(db: Session, search_text: str) -> dict:
     if exact_company_rows:
         return {
             "intent": "company",
-            "company_rows": _dedupe_company_rows_with_alias(exact_company_rows),
+            "company_rows": exact_company_rows,
             "sector_rows": [],
         }
 
     if company_rows:
         return {
             "intent": "company",
-            "company_rows": _dedupe_company_rows_with_alias(company_rows),
+            "company_rows": company_rows,
             "sector_rows": [],
         }
 
@@ -348,7 +314,7 @@ def _detect_search_intent(db: Session, search_text: str) -> dict:
         return {
             "intent": "sector",
             "company_rows": [],
-            "sector_rows": _dedupe_sector_rows(sector_rows),
+            "sector_rows": sector_rows,
         }
 
     return {
@@ -363,13 +329,13 @@ def _expand_search_terms_from_company_rows(
         company_rows,
 ) -> tuple[list[str], list[str]]:
     """
-    Expand only from company identity fields.
+    Company intent expansion.
 
     Example:
-    nvidia -> nvidia, NVDA, NVIDIA, NVIDIA Corporation, NASDAQ:NVDA
+    nvidia -> nvidia, NVDA, NVIDIA Corporation, aliases
+    nvda   -> nvda, NVDA, NVIDIA Corporation, aliases
 
-    Important:
-    Do NOT add sector / industry here.
+    Do not add sector / industry here.
     """
     terms: set[str] = {search_text}
     tickers: set[str] = set()
@@ -384,9 +350,6 @@ def _expand_search_terms_from_company_rows(
         if security and security.ticker:
             terms.add(security.ticker)
             tickers.add(security.ticker.upper())
-
-            if security.exchange:
-                terms.add(f"{security.exchange}:{security.ticker}")
 
         if alias and alias.alias:
             terms.add(alias.alias)
@@ -405,7 +368,7 @@ def _expand_search_terms_from_company_rows(
     return clean_terms, clean_tickers
 
 
-def _build_company_results_from_intent(
+def _build_company_results(
         db: Session,
         search_text: str,
         intent_info: dict,
@@ -415,8 +378,13 @@ def _build_company_results_from_intent(
 
     if intent == "company":
         results = []
+        seen_company_ids = set()
 
         for company, security, _alias in intent_info["company_rows"]:
+            if company.id in seen_company_ids:
+                continue
+
+            seen_company_ids.add(company.id)
             results.append(_company_to_result(company, security))
 
             if len(results) >= limit:
@@ -426,8 +394,13 @@ def _build_company_results_from_intent(
 
     if intent == "sector":
         results = []
+        seen_company_ids = set()
 
         for company, security in intent_info["sector_rows"]:
+            if company.id in seen_company_ids:
+                continue
+
+            seen_company_ids.add(company.id)
             results.append(_company_to_result(company, security))
 
             if len(results) >= limit:
@@ -446,6 +419,7 @@ def _build_company_results_from_intent(
             isouter=True,
         )
             .where(
+            CompanyModel.is_active.is_(True),
             or_(
                 CompanyModel.canonical_name.ilike(keyword_like),
                 CompanyModel.legal_name.ilike(keyword_like),
@@ -453,7 +427,7 @@ def _build_company_results_from_intent(
                 CompanyModel.sector.ilike(keyword_like),
                 CompanyModel.industry.ilike(keyword_like),
                 SecurityModel.ticker.ilike(keyword_like),
-            )
+            ),
         )
             .order_by(CompanyModel.canonical_name.asc())
             .limit(limit)
@@ -465,10 +439,10 @@ def _build_company_results_from_intent(
     ]
 
 
-def _build_keyword_filters(terms: list[str]) -> list[str]:
+def _build_keyword_filters(expanded_terms: list[str]) -> list[str]:
     return [
         f"%{term}%"
-        for term in terms
+        for term in expanded_terms
         if term and term.strip()
     ]
 
@@ -503,10 +477,7 @@ def global_search(
 
     keyword_filters = _build_keyword_filters(expanded_terms)
 
-    # --------------------
-    # Companies
-    # --------------------
-    companies = _build_company_results_from_intent(
+    companies = _build_company_results(
         db=db,
         search_text=search_text,
         intent_info=intent_info,
@@ -588,19 +559,13 @@ def global_search(
         report_stmt = report_stmt.where(ResearchReportModel.source == source)
 
     if ticker:
-        report_stmt = report_stmt.where(
-            ResearchReportModel.ticker.ilike(f"%{ticker}%")
-        )
+        report_stmt = report_stmt.where(ResearchReportModel.ticker.ilike(f"%{ticker}%"))
 
     if start_date:
-        report_stmt = report_stmt.where(
-            ResearchReportModel.published_at >= start_date
-        )
+        report_stmt = report_stmt.where(ResearchReportModel.published_at >= start_date)
 
     if end_date:
-        report_stmt = report_stmt.where(
-            ResearchReportModel.published_at <= end_date
-        )
+        report_stmt = report_stmt.where(ResearchReportModel.published_at <= end_date)
 
     report_stmt = (
         report_stmt
